@@ -1,4 +1,4 @@
-import ast
+from typed_ast import ast27 as ast
 import codecs
 import os
 import re

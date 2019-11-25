@@ -1,4 +1,4 @@
-import ast
+from typed_ast import ast27 as ast
 
 
 def _get_last_child_with_lineno(node):

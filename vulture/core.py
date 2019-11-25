@@ -26,7 +26,7 @@
 from __future__ import print_function
 
 import argparse
-import ast
+from typed_ast import ast27 as ast, ast3
 from fnmatch import fnmatch, fnmatchcase
 import os.path
 import pkgutil
@@ -149,6 +149,15 @@ class Item(object):
     def __hash__(self):
         return hash(self._tuple())
 
+class TypeCommentVisitor(ast3.NodeVisitor):
+    def __init__(self):
+        self.attrs = []
+
+    def visit_Name(self, node):
+        self.attrs.append(node.id)
+
+    def visit_Attribute(self, node):
+        self.attrs.append(node.attr)
 
 class Vulture(ast.NodeVisitor):
     """Find dead code."""
@@ -188,11 +197,7 @@ class Vulture(ast.NodeVisitor):
         try:
             node = ast.parse(code, filename=self.filename)
         except SyntaxError as err:
-            text = ' at "{0}"'.format(err.text.strip()) if err.text else ''
-            print('{0}:{1:d}: {2}{3}'.format(
-                utils.format_path(filename), err.lineno, err.msg, text),
-                file=sys.stderr)
-            self.found_dead_code_or_error = True
+            pass
         except (TypeError, ValueError) as err:
             # Python < 3.5 raises TypeError and Python >= 3.5 raises
             # ValueError if source contains null bytes.
@@ -365,6 +370,10 @@ class Vulture(ast.NodeVisitor):
 
         """
         # Old format strings.
+        try:
+            s = s.decode('utf-8', 'ignore')
+        except AttributeError:
+            pass
         self.used_names |= set(re.findall(r'\%\((\w+)\)', s))
 
         def is_identifier(name):
@@ -457,6 +466,36 @@ class Vulture(ast.NodeVisitor):
         for param in [node.args.vararg, node.args.kwarg]:
             if param and isinstance(param, str):
                 self._define_variable(param, node, confidence=100)
+
+        if node.type_comment:
+            type_comment = ast3.parse(node.type_comment, '<func_type>', 'func_type')
+            v = TypeCommentVisitor()
+            v.visit(type_comment)
+            for name in v.attrs:
+                self.used_names.add(name)
+
+    def visit_Assign(self, node):
+        self.maybe_visit_statement_type_comment(node)
+
+    def visit_For(self, node):
+        self.maybe_visit_statement_type_comment(node)
+
+    def visit_AsyncFor(self, node):
+        self.maybe_visit_statement_type_comment(node)
+
+    def visit_With(self, node):
+        self.maybe_visit_statement_type_comment(node)
+
+    def visit_AsyncWith(self, node):
+        self.maybe_visit_statement_type_comment(node)
+
+    def maybe_visit_statement_type_comment(self, node):
+        if node.type_comment:
+            type_comment = ast3.parse(node.type_comment, '<type_comment>', 'eval')
+            v = TypeCommentVisitor()
+            v.visit(type_comment)
+            for name in v.attrs:
+                self.used_names.add(name)
 
     def visit_If(self, node):
         self._handle_conditional_node(node, 'if')
